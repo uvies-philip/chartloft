@@ -348,6 +348,7 @@ function applyBars(bars, sym) {
   renderObjects();
   renderDetails();
   updateActiveWatchlist();
+  renderWatchlist();
   updateCredits();
   $('#spFootText').textContent = sym.provider === 'td' ? 'Twelve Data · free tier' : 'Binance public data';
 }
@@ -362,10 +363,10 @@ function handleLoadError(e, sym) {
   $('#lgInd').innerHTML = '';
   if (code === 'NO_KEY' || code === 'BAD_KEY') {
     showState({
-      title: code === 'NO_KEY' ? `${sym.sym} needs a free data key` : 'That API key was rejected',
-      body: sym.provider === 'td'
+      title: code === 'NO_KEY' ? `${sym.sym} needs a free data key` : `Twelve Data rejected the request for ${sym.sym}`,
+      body: code === 'NO_KEY'
         ? 'Forex, metals, indices and stocks come from Twelve Data. A free key covers them with 800 requests a day and 8 per minute. Create one at twelvedata.com, paste it here, and it stays in this browser only.'
-        : 'This instrument needs a Twelve Data key.',
+        : 'Either the key is wrong, or your plan does not include this symbol. Free keys cover forex and US stocks; some indices and exchanges need a paid plan. Check the key in Settings, or try another symbol.',
       actions: [{ text: 'Add free key', primary: true, onClick: openSettings }, { text: 'Switch to Bitcoin', onClick: () => selectSymbol('BTCUSDT') }],
     });
   } else {

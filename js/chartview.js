@@ -153,7 +153,7 @@ export class ChartView {
 
   setVolumeVisible(v) {
     this.showVolume = !!v;
-    if (this._volSeries) this._volSeries.applyOptions({ visible: !!v });
+    if (this._volSeries) this._volSeries.applyOptions({ visible: !!v && this._hasVol !== false });
   }
 
   /* --------------------------------- data ---------------------------------- */
@@ -202,7 +202,10 @@ export class ChartView {
       data = bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }));
     }
     this._priceSeries.setData(data);
+    const hasVol = bars.some((b) => (b.volume || 0) > 0);
+    this._hasVol = hasVol;
     if (this._volSeries) {
+      this._volSeries.applyOptions({ visible: this.showVolume && hasVol });
       this._volSeries.setData(bars.map((b) => ({
         time: b.time, value: b.volume || 0,
         color: b.close >= b.open ? t.volUp : t.volDown,
