@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>ChartDesk · Free charting workstation</title>
+<meta name="description" content="A free, open charting workstation for crypto, forex, metals, indices and stocks. Indicators, drawing tools, bar replay and alerts. No account, no subscription." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0e13'/%3E%3Cpath d='M7 23V9M13 23v-8M19 23V6M25 23v-6' stroke='%234c8dff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================== TOP BAR ============================== -->
+  <header class="topbar">
+    <a class="brand" href="./" title="ChartDesk home">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="32" y2="32">
+          <stop offset="0" stop-color="#16233a"/><stop offset="1" stop-color="#0b1018"/>
+        </linearGradient></defs>
+        <path d="M7 23V9M13 23v-8M19 23V6M25 23v-6" stroke="#4c8dff" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <span>Chart<b>Desk</b></span>
+    </a>
+
+    <button class="sym-btn" id="symbolBtn" title="Change symbol (Ctrl+K)">
+      <span class="sym-avatar" id="symAvatar">₿</span>
+      <span class="sym-txt">
+        <span class="sym-name" id="symName">BTCUSDT</span>
+        <span class="sym-desc" id="symDesc">Bitcoin / TetherUS</span>
+      </span>
+      <span class="sym-caret" data-icon="chevronDown"></span>
+    </button>
+
+    <div class="tf-group" id="tfGroup" role="tablist" aria-label="Timeframe"></div>
+
+    <div class="topbar-actions">
+      <button class="tb-btn" data-act="charttype" title="Chart type" data-icon="candle"></button>
+      <button class="tb-btn" data-act="indicators" title="Indicators (Ctrl+I)" data-icon="fx"></button>
+      <button class="tb-btn" data-act="compare" title="Compare symbol" data-icon="compare"></button>
+      <button class="tb-btn" data-act="alert" title="Create alert (Alt+A)" data-icon="bell"></button>
+      <button class="tb-btn" data-act="replay" title="Bar replay" data-icon="replay"></button>
+      <span class="tb-sep"></span>
+      <button class="tb-btn" data-act="screenshot" title="Screenshot (Ctrl+Shift+S)" data-icon="camera"></button>
+      <button class="tb-btn" data-act="layouts" title="Saved layouts" data-icon="save"></button>
+      <button class="tb-btn panel-toggle" data-act="panel" title="Watchlist" data-icon="layout"></button>
+      <button class="tb-btn" data-act="theme" title="Light / dark (Ctrl+J)" data-icon="moon"></button>
+      <button class="tb-btn" data-act="settings" title="Settings" data-icon="gear"></button>
+      <button class="tb-btn search-btn" data-act="search" title="Search (Ctrl+K)">
+        <span data-icon="search"></span><kbd>Ctrl K</kbd>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================== WORKSPACE ============================== -->
+  <div class="workspace">
+
+    <aside class="rail" id="rail" aria-label="Drawing tools"></aside>
+
+    <main class="chart-col">
+      <div class="chart-shell" id="chartShell">
+        <div class="chart-host" id="chart"></div>
+        <canvas class="draw-overlay" id="drawOverlay"></canvas>
+
+        <div class="legend" id="legend">
+          <div class="legend-top">
+            <div class="lg-sym">
+              <span class="lg-title" id="lgSymbol">BTCUSDT</span>
+              <span class="lg-badge" id="lgExch">BINANCE</span>
+              <span class="lg-tf" id="lgTf">15m</span>
+            </div>
+            <div class="lg-ohlc" id="lgOhlc"></div>
+          </div>
+          <div class="lg-ind" id="lgInd"></div>
+        </div>
+
+        <div class="chart-toolbar" id="chartToolbar">
+          <button class="tool-chip" data-act="log" title="Logarithmic scale">log</button>
+          <button class="tool-chip" data-act="pct" title="Percent scale">%</button>
+          <button class="tool-chip" data-act="autoscale" title="Auto scale">auto</button>
+          <button class="tool-chip" data-act="vol" title="Volume">vol</button>
+          <button class="tool-chip" data-act="reset" title="Reset zoom">reset</button>
+        </div>
+
+        <div class="replay-bar" id="replayBar" hidden>
+          <button class="rp-btn" data-rp="back" title="Step back" data-icon="stepb"></button>
+          <button class="rp-btn rp-play" data-rp="play" title="Play" data-icon="play"></button>
+          <button class="rp-btn" data-rp="fwd" title="Step forward" data-icon="stepf"></button>
+          <div class="rp-meter"><div class="rp-fill" id="rpFill"></div></div>
+          <span class="rp-label" id="rpLabel">--</span>
+          <select class="rp-speed" id="rpSpeed" title="Speed">
+            <option value="1200">0.5x</option>
+            <option value="700" selected>1x</option>
+            <option value="350">2x</option>
+            <option value="150">5x</option>
+          </select>
+          <button class="rp-btn rp-exit" data-rp="exit" title="Exit replay">exit</button>
+        </div>
+
+        <div class="chart-overlay-state" id="chartState" hidden>
+          <div class="state-card" id="stateCard"></div>
+        </div>
+
+        <div class="loading" id="loading" hidden><span class="spinner"></span><span id="loadingText">Loading</span></div>
+      </div>
+
+      <footer class="statusbar">
+        <div class="sb-left">
+          <span class="dot" id="connDot"></span>
+          <span id="statusText">Ready</span>
+        </div>
+        <div class="sb-right">
+          <span id="creditInfo"></span>
+          <span class="sb-sep"></span>
+          <span class="sb-muted">Charts by TradingView Lightweight Charts™</span>
+          <span class="sb-sep"></span>
+          <span class="sb-muted" id="clock"></span>
+        </div>
+      </footer>
+    </main>
+
+    <aside class="sidepanel" id="sidepanel">
+      <div class="sp-tabs" id="spTabs">
+        <button class="sp-tab active" data-tab="watchlist">Watchlist</button>
+        <button class="sp-tab" data-tab="objects">Objects</button>
+        <button class="sp-tab" data-tab="alerts">Alerts</button>
+      </div>
+
+      <div class="sp-body">
+        <section class="sp-pane active" data-pane="watchlist">
+          <div class="wl-head">
+            <input class="wl-search" id="wlSearch" placeholder="Search or paste a symbol" spellcheck="false" />
+            <button class="icon-btn" id="wlAdd" title="Add the symbol in the box" data-icon="plus"></button>
+            <button class="icon-btn" id="wlRefresh" title="Refresh quotes" data-icon="refresh"></button>
+          </div>
+          <div class="wl-list" id="wlList"></div>
+          <div class="sp-note" id="wlNote"></div>
+        </section>
+
+        <section class="sp-pane" data-pane="objects">
+          <div class="ob-head">
+            <span id="obCount">0 objects</span>
+            <div class="ob-actions">
+              <button class="chip-btn" id="obHide" title="Hide all drawings" data-icon="eye"></button>
+              <button class="chip-btn" id="obLock" title="Lock drawings" data-icon="lock"></button>
+              <button class="chip-btn danger" id="obClear" title="Remove all drawings" data-icon="trash"></button>
+            </div>
+          </div>
+          <div class="ob-list" id="obList"></div>
+          <div class="ob-style" id="obStyle" hidden>
+            <div class="ob-style-title">Selected object</div>
+            <div class="style-row" id="styleColors"></div>
+            <div class="style-row">
+              <label>Width</label>
+              <input type="range" id="styleWidth" min="1" max="6" step="1" value="2" />
+            </div>
+            <button class="btn ghost full" id="obDelete">Delete object</button>
+          </div>
+          <div class="sp-details" id="spDetails"></div>
+        </section>
+
+        <section class="sp-pane" data-pane="alerts">
+          <div class="al-head">
+            <button class="btn primary full" id="alertNew" data-icon="bell">Create alert</button>
+            <div class="al-sub">Alerts run in this browser tab. Keep it open, or install the app.</div>
+          </div>
+          <div class="al-list" id="alList"></div>
+        </section>
+      </div>
+
+      <div class="sp-foot">
+        <span id="spFootText">Free data · No account</span>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toasts" class="toasts"></div>
+<div id="menuRoot"></div>
+<div id="errlog" hidden></div>
+
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
