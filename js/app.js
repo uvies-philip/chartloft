@@ -547,7 +547,7 @@ function startPolling() {
       } catch { /* transient */ }
     }
     checkAlerts();
-  }, 5_000);
+  }, 3_000);
 
   // 30s: every watchlist row plus its sparkline.
   setInterval(async () => {
