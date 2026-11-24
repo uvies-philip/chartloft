@@ -1,9 +1,9 @@
 // ChartDesk application shell: state, data flow, panels, modals, shortcuts.
 
 import { $, $$, el, uid, clamp, fmtPrice, fmtCompact, fmtPct, store, debounce, downloadCanvas, fmtClock, fmtDate, hexA, timeAgo } from './util.js';
-import { TIMEFRAMES, SYMBOLS, findSymbol, searchSymbols, CLASS_LABEL, tf } from './catalog.js';
+import { TIMEFRAMES, SYMBOLS, findSymbol, searchSymbols, CLASS_LABEL, tf, tvId } from './catalog.js';
 import { INDICATOR_DEFS, INDICATOR_MAP, defaultParams, OSC_COLORS, OVERLAY_COLORS } from './indicators.js';
-import { getBars, refreshTail, getCryptoQuotes, getSparkQuotes, getSparkCloses, streamTrades, onStatus, setApiKey, getApiKey, setUseLive, getUseLive } from './providers.js';
+import { getBars, refreshTail, getCryptoQuotes, getSparkQuotes, getSparkCloses, streamTrades, tvQuotes, onStatus, setApiKey, getApiKey, setUseLive, getUseLive } from './providers.js';
 import { ChartView } from './chartview.js';
 import { DrawingsLayer, TOOLS } from './drawings.js';
 import { icon } from './icons.js';
@@ -47,6 +47,7 @@ const lastKnown = new Map();
 const lastChange = new Map();
 const sparks = new Map(); // sym -> array of closes
 const quotes = {}; // psym -> { price, changePct }
+const tvPrices = new Map(); // sym -> { price, changePct, changeAbs, mode }
 let lastDataAt = 0;
 let lastTickAt = 0;
 let liveStop = null;
@@ -340,9 +341,12 @@ async function selectSymbol(symStr, interval) {
   hideState();
 
   try {
-    const bars = await getBars(sym, state.interval);
+    const [bars, tv] = await Promise.all([
+      getBars(sym, state.interval),
+      tvQuotes([sym]).catch(() => ({})),
+    ]);
     if (token !== loadToken) return;
-    applyBars(bars, sym);
+    applyBars(alignToTv(bars, sym, tv[tvId(sym)]), sym);
     persist();
   } catch (e) {
     if (token !== loadToken) return;
@@ -352,6 +356,21 @@ async function selectSymbol(symStr, interval) {
   }
 }
 
+// History and the live quote come from different vendors. Shift the series onto
+// the current quote so the last candle, the label and TradingView all agree.
+function alignToTv(bars, sym, q) {
+  if (!q || !Number.isFinite(q.price) || !bars || !bars.length) return bars;
+  tvPrices.set(sym.sym, q);
+  if (Number.isFinite(q.changePct)) lastChange.set(sym.sym, q.changePct);
+  const off = q.price - bars[bars.length - 1].close;
+  if (!Number.isFinite(off) || Math.abs(off / q.price) > 0.03) return bars;
+  if (Math.abs(off) < 1e-10) return bars;
+  return bars.map((b) => ({
+    ...b,
+    open: b.open + off, high: b.high + off, low: b.low + off, close: b.close + off,
+  }));
+}
+
 function applyBars(bars, sym) {
   state.bars = bars;
   state.digits = sym.digits;
@@ -359,7 +378,12 @@ function applyBars(bars, sym) {
   lastKnown.set(sym.sym, last.close);
   const cutoff = Math.floor(last.time / 86400) * 86400;
   const ref = bars.find((b) => b.time >= cutoff) || bars[0];
-  if (ref && ref.close) lastChange.set(sym.sym, ((last.close - ref.close) / ref.close) * 100);
+  const tvq = tvPrices.get(sym.sym);
+  if (tvq && Number.isFinite(tvq.changePct)) {
+    lastChange.set(sym.sym, tvq.changePct);
+  } else if (ref && ref.close) {
+    lastChange.set(sym.sym, ((last.close - ref.close) / ref.close) * 100);
+  }
   lastDataAt = Date.now();
   sparks.set(sym.sym, bars.slice(-40).map((b) => b.close));
   hoveringBar = null;
@@ -488,25 +512,29 @@ function setLoading(on, text) {
 
 /* --------------------------------- polling -------------------------------- */
 function startPolling() {
-  // 20s: refresh watchlist quotes, then push one price patch into the active chart.
-  // A batched spark call covers every non-crypto symbol in a single relay request.
+  // 5s: quote for the symbol on screen only, which keeps the request count low
+  // while the price still matches TradingView second by second.
   setInterval(async () => {
-    if (document.hidden) return;
-    await refreshWatchlist();
-    lastDataAt = Date.now();
-    checkAlerts();
-    if (!state.bars.length || state.replay.active) return;
+    if (document.hidden || state.replay.active || !state.bars.length) return;
     const sym = findSymbol(state.symbol);
     if (!sym) return;
-    if (sym.provider !== 'binance') {
-      const price = lastKnown.get(sym.sym);
-      const bars = state.bars;
-      const prev = bars[bars.length - 1]?.close;
-      if (Number.isFinite(price) && chartView.patchLastBar(price)) {
-        lastDataAt = Date.now();
-        flashPrice(price, price >= (prev ?? price));
+    const q = await tvQuotes([sym], { maxAge: 3000 });
+    const hit = q[tvId(sym)];
+    if (hit) {
+      tvPrices.set(sym.sym, hit);
+      lastKnown.set(sym.sym, hit.price);
+      if (Number.isFinite(hit.changePct)) lastChange.set(sym.sym, hit.changePct);
+      if (sym.psym) quotes[sym.psym] = { price: hit.price, changePct: hit.changePct };
+      lastDataAt = Date.now();
+      if (sym.provider !== 'binance') {
+        const prev = state.bars[state.bars.length - 1].close;
+        if (chartView.patchLastBar(hit.price)) {
+          flashPrice(hit.price, hit.price >= prev);
+          updateWatchPrice(sym.sym, hit.price);
+        }
       }
-    } else if (Date.now() - lastTickAt > 45_000) {
+    }
+    if (sym.provider === 'binance' && Date.now() - lastTickAt > 45_000) {
       // The trade socket died or is blocked: fall back to REST so the chart still moves.
       try {
         const fresh = await refreshTail(sym, state.interval, state.bars);
@@ -518,7 +546,16 @@ function startPolling() {
         }
       } catch { /* transient */ }
     }
-  }, 12_000);
+    checkAlerts();
+  }, 5_000);
+
+  // 30s: every watchlist row plus its sparkline.
+  setInterval(async () => {
+    if (document.hidden) return;
+    await refreshPrices();
+    refreshSparks();
+    checkAlerts();
+  }, 30_000);
 
   // 90s: true OHLC re-sync for the active non-crypto chart, view preserved.
   setInterval(async () => {
@@ -527,42 +564,65 @@ function startPolling() {
     if (!sym || sym.provider === 'binance') return;
     try {
       const fresh = await getBars(sym, state.interval, { force: true });
-      if (fresh && fresh !== state.bars) {
-        state.bars = fresh;
-        chartView.refreshData(fresh);
+      if (fresh) {
+        state.bars = alignToTv(fresh, sym, tvPrices.get(sym.sym));
+        chartView.refreshData(state.bars);
       }
     } catch { /* keep the patched bars */ }
   }, 90_000);
 }
 
-async function refreshWatchlist() {
+async function refreshPrices() {
   const syms = watchlist.map(findSymbol).filter(Boolean);
-  const crypto = syms.filter((s) => s.provider === 'binance');
-  const rest = syms.filter((s) => s.provider !== 'binance');
-  const jobs = [];
-  if (crypto.length) {
-    jobs.push(getCryptoQuotes(crypto).then((q) => {
-      for (const [k, v] of Object.entries(q)) {
-        quotes[k] = { price: v.price, changePct: v.changePct };
-        const s = crypto.find((x) => x.psym === k);
-        if (s) lastKnown.set(s.sym, v.price);
+  if (!syms.length) return;
+  try {
+    const q = await tvQuotes(syms);
+    for (const s of syms) {
+      const hit = q[tvId(s)];
+      if (!hit) continue;
+      tvPrices.set(s.sym, hit);
+      lastKnown.set(s.sym, hit.price);
+      if (Number.isFinite(hit.changePct)) lastChange.set(s.sym, hit.changePct);
+      if (s.psym) quotes[s.psym] = { price: hit.price, changePct: hit.changePct };
+    }
+  } catch { /* fall through to the direct feeds */ }
+
+  // Crypto fallback straight from Binance when TradingView did not answer.
+  const missing = syms.filter((s) => s.provider === 'binance' && !tvPrices.has(s.sym));
+  if (missing.length) {
+    try {
+      const cq = await getCryptoQuotes(missing);
+      for (const [k, v] of Object.entries(cq)) {
+        const s = missing.find((x) => x.psym === k);
+        if (s) { lastKnown.set(s.sym, v.price); quotes[k] = v; }
       }
-    }).catch(() => {}));
+    } catch { /* ignore */ }
   }
-  if (rest.length) {
-    jobs.push(getSparkQuotes(rest).then((q) => {
-      for (const s of rest) {
-        const hit = q[s.y];
-        if (!hit) continue;
-        lastKnown.set(s.sym, hit.price);
-        lastChange.set(s.sym, hit.changePct);
-        if (hit.spark && hit.spark.length > 2) sparks.set(s.sym, hit.spark);
-      }
-    }).catch(() => {}));
-  }
-  await Promise.all(jobs);
   renderWatchlist();
   updateCredits();
+}
+
+async function refreshSparks() {
+  const rest = watchlist.map(findSymbol).filter((s) => s && s.provider !== 'binance');
+  if (!rest.length) return;
+  try {
+    const q = await getSparkQuotes(rest);
+    for (const s of rest) {
+      const hit = q[s.y];
+      if (hit && hit.spark && hit.spark.length > 2) sparks.set(s.sym, hit.spark);
+      // Delayed instruments fall back to the session change from the spark series.
+      const tv = tvPrices.get(s.sym);
+      if (hit && Number.isFinite(hit.changePct) && !tv) {
+        lastChange.set(s.sym, hit.changePct);
+      }
+    }
+    renderWatchlist();
+  } catch { /* sparklines are cosmetic */ }
+}
+
+async function refreshWatchlist() {
+  await refreshPrices();
+  refreshSparks();
 }
 
 /* ================================= legend ================================= */
@@ -579,8 +639,19 @@ function renderLegend(barOverride) {
   $('#lgTf').textContent = state.interval + (state.chartType === 'ha' ? ' · HA' : '');
 
   if (!bar) { $('#lgOhlc').innerHTML = ''; return; }
-  const chg = prev ? bar.close - prev.close : d.change;
-  const pct = prev && prev.close ? (chg / prev.close) * 100 : d.changePct;
+  // On the live bar show the daily change, like TradingView does. When the user
+  // hovers an older candle show that candle against the one before it.
+  const isLast = !barOverride && state.bars.length > 0 && bar.time === state.bars[state.bars.length - 1].time;
+  const dailyPct = lastChange.get(state.symbol);
+  let chg;
+  let pct;
+  if (isLast && Number.isFinite(dailyPct)) {
+    pct = dailyPct;
+    chg = bar.close - bar.close / (1 + pct / 100);
+  } else {
+    chg = prev ? bar.close - prev.close : d.change;
+    pct = prev && prev.close ? (chg / prev.close) * 100 : d.changePct;
+  }
   const cls = chg >= 0 ? 'up' : 'down';
   const parts = [
     ['O', bar.open], ['H', bar.high], ['L', bar.low], ['C', bar.close],
@@ -656,7 +727,7 @@ function renderWatchlist() {
     host.append(row);
   }
   const note = $('#wlNote');
-  if (note) note.textContent = 'Crypto is live from Binance. Forex, metals, indices and stocks come from the free Yahoo feed. No account, no key.';
+  if (note) note.textContent = 'Live quotes come from TradingView. Crypto is also streamed from Binance. Candle history is free data, no account, no key.';
 }
 
 function updateActiveWatchlist() {
@@ -1319,7 +1390,7 @@ function openSettings() {
   const body = el('div', {},
     el('div', { class: 'det-title', text: 'Market data' }),
     el('div', { class: 'hint', style: { marginBottom: '12px' } },
-      'Crypto streams live from Binance. Forex, gold, indices and stocks load from a free Yahoo feed through a public text relay. Neither path needs an account or a key.'),
+      'Crypto streams live from Binance. Every other price is quoted straight from TradingView (forex, gold as spot XAU/USD, indices and stocks), so the numbers match the TradingView app. Candle history comes from free feeds. Neither path needs an account or a key.'),
     el('div', { class: 'row', style: { alignItems: 'center', marginBottom: '10px' } },
       el('label', { text: 'Use Twelve Data for live forex data', style: { fontSize: '12px', color: 'var(--text-2)' } }), liveSwitch),
     field('Optional Twelve Data key', keyInput, 'Only needed if you switch the option above on. Free tier: 800 requests a day. Stored in this browser only.'),
@@ -1453,11 +1524,11 @@ function updateCredits() {
   const node = $('#creditInfo');
   if (!node) return;
   const sym = findSymbol(state.symbol) || {};
-  const prov = sym.provider === 'binance' ? 'Binance' : getUseLive() ? 'Twelve Data' : 'Yahoo';
+  const prov = sym.provider === 'binance' ? 'Binance' : 'TradingView';
   const age = lastDataAt ? timeAgo(lastDataAt) : 'loading';
   node.textContent = `${prov} · ${age}`;
   const foot = $('#spFootText');
-  if (foot) foot.textContent = sym.provider === 'binance' ? 'Live crypto · no key' : 'Free data · no key';
+  if (foot) foot.textContent = sym.provider === 'binance' ? 'Live crypto · no key' : 'TradingView quotes · no key';
 }
 
 function startClock() {

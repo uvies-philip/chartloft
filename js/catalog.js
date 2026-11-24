@@ -50,16 +50,18 @@ export const SYMBOLS = [
   { sym: 'USDNGN', name: 'US Dollar / Nigerian Naira', cls: 'forex', provider: 'yahoo', y: 'USDNGN=X', td: 'USD/NGN', digits: 2, exch: 'FX' },
 
   // ---------------- metals ----------------
-  { sym: 'XAUUSD', name: 'Gold / US Dollar', cls: 'metal', provider: 'yahoo', y: 'GC=F', td: 'XAU/USD', digits: 2, exch: 'COMEX', note: 'COMEX front month futures' },
-  { sym: 'XAGUSD', name: 'Silver / US Dollar', cls: 'metal', provider: 'yahoo', y: 'SI=F', td: 'XAG/USD', digits: 3, exch: 'COMEX', note: 'COMEX front month futures' },
+  // Quotes come from TradingView (OANDA spot). History is the COMEX front month
+  // shifted onto the spot price so the series and the live quote agree.
+  { sym: 'XAUUSD', name: 'Gold / US Dollar', cls: 'metal', provider: 'yahoo', y: 'GC=F', td: 'XAU/USD', digits: 2, exch: 'OANDA', tv: 'OANDA:XAUUSD', note: 'Spot XAU/USD, spot aligned' },
+  { sym: 'XAGUSD', name: 'Silver / US Dollar', cls: 'metal', provider: 'yahoo', y: 'SI=F', td: 'XAG/USD', digits: 3, exch: 'OANDA', tv: 'OANDA:XAGUSD', note: 'Spot XAG/USD, spot aligned' },
 
   // ---------------- indices ----------------
-  { sym: 'US30', name: 'Dow Jones 30', cls: 'index', provider: 'yahoo', y: '^DJI', td: 'DJI', digits: 1, exch: 'DJ' },
-  { sym: 'NAS100', name: 'Nasdaq 100', cls: 'index', provider: 'yahoo', y: '^NDX', td: 'NDX', digits: 1, exch: 'NASDAQ' },
-  { sym: 'SPX500', name: 'S&P 500', cls: 'index', provider: 'yahoo', y: '^GSPC', td: 'SPX', digits: 1, exch: 'SP' },
-  { sym: 'GER40', name: 'DAX 40', cls: 'index', provider: 'yahoo', y: '^GDAXI', td: 'DAX', digits: 1, exch: 'XETRA' },
-  { sym: 'UK100', name: 'FTSE 100', cls: 'index', provider: 'yahoo', y: '^FTSE', td: 'FTSE', digits: 1, exch: 'LSE' },
-  { sym: 'JP225', name: 'Nikkei 225', cls: 'index', provider: 'yahoo', y: '^N225', td: 'N225', digits: 1, exch: 'TSE' },
+  { sym: 'US30', name: 'Dow Jones 30', cls: 'index', provider: 'yahoo', y: '^DJI', td: 'DJI', digits: 1, exch: 'DJ', tv: 'DJ:DJI' },
+  { sym: 'NAS100', name: 'Nasdaq 100', cls: 'index', provider: 'yahoo', y: '^NDX', td: 'NDX', digits: 1, exch: 'NASDAQ', tv: 'NASDAQ:NDX' },
+  { sym: 'SPX500', name: 'S&P 500', cls: 'index', provider: 'yahoo', y: '^GSPC', td: 'SPX', digits: 1, exch: 'SP', tv: 'SP:SPX' },
+  { sym: 'GER40', name: 'DAX 40', cls: 'index', provider: 'yahoo', y: '^GDAXI', td: 'DAX', digits: 1, exch: 'XETRA', tv: 'XETR:DAX' },
+  { sym: 'UK100', name: 'FTSE 100', cls: 'index', provider: 'yahoo', y: '^FTSE', td: 'FTSE', digits: 1, exch: 'LSE', tv: 'FTSE:UKX' },
+  { sym: 'JP225', name: 'Nikkei 225', cls: 'index', provider: 'yahoo', y: '^N225', td: 'N225', digits: 1, exch: 'TSE', tv: 'TSE:NI225' },
 
   // ---------------- equities ----------------
   { sym: 'AAPL', name: 'Apple Inc', cls: 'stock', provider: 'yahoo', y: 'AAPL', td: 'AAPL', digits: 2, exch: 'NASDAQ' },
@@ -70,6 +72,21 @@ export const SYMBOLS = [
   { sym: 'META', name: 'Meta Platforms Inc', cls: 'stock', provider: 'yahoo', y: 'META', td: 'META', digits: 2, exch: 'NASDAQ' },
   { sym: 'GOOGL', name: 'Alphabet Inc Class A', cls: 'stock', provider: 'yahoo', y: 'GOOGL', td: 'GOOGL', digits: 2, exch: 'NASDAQ' },
 ];
+
+// TradingView identifiers used for the live quote. History still comes from
+// Yahoo or Binance, so the two are aligned on load.
+const TV_INDEX = { US30: 'DJ:DJI', NAS100: 'NASDAQ:NDX', SPX500: 'SP:SPX', GER40: 'XETR:DAX', UK100: 'FTSE:UKX', JP225: 'TSE:NI225' };
+
+export function tvId(s) {
+  if (!s) return null;
+  if (s.tv) return s.tv;
+  if (s.provider === 'binance') return `BINANCE:${s.psym || s.sym}`;
+  if (s.cls === 'forex') return `FX_IDC:${s.sym}`;
+  if (s.cls === 'metal') return `OANDA:${s.sym}`;
+  if (s.cls === 'index') return TV_INDEX[s.sym] || null;
+  if (s.cls === 'stock') return `${s.exch && s.exch !== '?' ? s.exch : 'NASDAQ'}:${s.sym}`;
+  return null;
+}
 
 export function findSymbol(sym) {
   if (!sym) return null;

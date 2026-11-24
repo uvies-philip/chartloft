@@ -5,7 +5,7 @@
 //   td      : optional Twelve Data upgrade when the user supplies a free key
 // Bars are normalised to { time (UTC seconds), open, high, low, close, volume }.
 
-import { tf } from './catalog.js';
+import { tf, tvId } from './catalog.js';
 import { store } from './util.js';
 
 const BINANCE_HOSTS = ['https://api.binance.com', 'https://data-api.binance.vision'];
@@ -389,6 +389,42 @@ export function streamTrades(sym, onTick, onState = () => {}) {
     clearTimeout(timer);
     try { ws?.close(); } catch {}
   };
+}
+
+/* ---------------------------- TradingView quotes --------------------------- */
+// scanner.tradingview.com is public and its CORS policy allows a plain GET from
+// any origin, but the batch POST fails preflight from non TradingView origins.
+// So: one GET per symbol, cached briefly, and only the watched set is polled.
+const tvCache = new Map(); // tvId -> { t, q }
+
+export async function tvQuotes(symbols, { maxAge = 3000 } = {}) {
+  const ids = [...new Set(symbols.map(tvId).filter(Boolean))];
+  if (!ids.length) return {};
+  const now = Date.now();
+  const out = {};
+  const need = [];
+  for (const id of ids) {
+    const hit = tvCache.get(id);
+    if (hit && now - hit.t < maxAge) out[id] = hit.q;
+    else need.push(id);
+  }
+  await Promise.all(need.map(async (id) => {
+    try {
+      const res = await fetch(`https://scanner.tradingview.com/symbol?symbol=${encodeURIComponent(id)}&fields=close,change,change_abs,update_mode`);
+      if (!res.ok) return;
+      const j = await res.json();
+      if (j.close == null) return;
+      const q = {
+        price: +j.close,
+        changePct: j.change == null ? null : +j.change,
+        changeAbs: j.change_abs == null ? null : +j.change_abs,
+        mode: j.update_mode || null,
+      };
+      tvCache.set(id, { t: Date.now(), q });
+      out[id] = q;
+    } catch { /* symbol not on this exchange, or offline */ }
+  }));
+  return out;
 }
 
 export function clearCache() { memCache.clear(); }

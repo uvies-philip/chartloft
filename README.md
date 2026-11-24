@@ -41,21 +41,36 @@ A free charting workstation that runs entirely in your browser. Candles, indicat
 
 No API key. No account. Nothing to sign up for.
 
-| Market | Source | How |
+| Market | Quotes and last price | Candle history |
 | --- | --- | --- |
-| Crypto | Binance public REST | Direct from the browser, live |
-| Forex, gold, silver, indices, US stocks | Yahoo Finance | Read through the `r.jina.ai` text relay, which mirrors the missing CORS headers |
+| Crypto | TradingView `BINANCE:*`, plus a Binance trade websocket for tick by tick updates | Binance public REST |
+| Forex | TradingView `FX_IDC:*` (interbank composite, streaming) | Yahoo Finance via the `r.jina.ai` relay |
+| Gold and silver | TradingView `OANDA:XAUUSD` and `OANDA:XAGUSD`, i.e. real spot | COMEX front month via the relay, shifted onto spot |
+| Indices | TradingView `NASDAQ:NDX`, `DJ:DJI`, `SP:SPX`, `XETR:DAX`, `FTSE:UKX`, `TSE:NI225` | Yahoo via the relay |
+| US stocks | TradingView `NASDAQ:*` | Yahoo via the relay |
 
-Yahoo sends no CORS headers, so a browser cannot call it directly. `r.jina.ai` returns the same JSON as plain text with CORS enabled, and the app strips the text preamble before parsing. That is the whole trick, and it costs nothing.
+The point of the split: `scanner.tradingview.com` is a public endpoint with an
+open CORS policy, so the browser can read the exact quote TradingView shows in
+its own app. That is what the price label, the watchlist and the daily change
+come from. It costs nothing and needs no key.
+
+Candle history is heavier, so it comes from free feeds. Two of those feeds lag
+Yahoo's intraday data by 1 to 15 minutes, and the COMEX gold contract trades at
+a small premium to spot. Both are corrected at load: the series is shifted onto
+the live TradingView quote so the last candle and the price agree with what you
+see on TradingView. History can therefore differ from spot by a few dollars on
+gold at the far left of the chart, while the live edge is exact.
 
 Two consequences, stated plainly:
 
-- The relay allows roughly 20 requests a minute per IP. The app spaces its calls out, caches every series for a few minutes and cools down for 45 seconds if it sees a 429.
-- Free feeds are delayed. Yahoo intraday data typically lags 1 to 15 minutes depending on the instrument. Do not use this for execution timing.
+- The relay allows roughly 20 requests a minute per IP. The app spaces its calls
+  out, caches every series and cools down for 45 seconds on a 429. Only the
+  symbol on screen is polled every 5 seconds; the watchlist refreshes every 30.
+- Candle history is delayed. Do not use it for execution timing, in either app.
 
-If you want lower latency on FX you can add a free Twelve Data key in Settings and flip the live feed switch. It is entirely optional, and the app falls back to the free feed if the key route fails.
-
-Gold and silver come from COMEX front month futures (`GC=F`, `SI=F`) because Yahoo has no spot `XAUUSD` series. Prices track spot closely with a small basis, and the instrument panel labels the contract so you are never guessing.
+If you want lower latency history on FX you can add a free Twelve Data key in
+Settings. It is optional, and the app falls back to the free feeds if that route
+fails.
 
 ## Keyboard shortcuts
 
