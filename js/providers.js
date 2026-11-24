@@ -219,7 +219,11 @@ export async function getBars(sym, interval, { force = false } = {}) {
   const key = `${sym.sym}|${interval}|${prov}`;
   const cached = memCache.get(key);
   const now = Date.now();
-  if (!force && cached && now - cached.ts < CACHE_TTL && cached.bars.length) return cached.bars;
+  if (!force && cached && now - cached.ts < CACHE_TTL && cached.bars.length) {
+    // Still report the active series so the status bar never shows a stale symbol.
+    statusCb({ kind: 'ok', text: `${sym.sym} · ${cached.bars.length} bars` });
+    return cached.bars;
+  }
 
   statusCb({ kind: 'loading', text: `Loading ${sym.sym} ${interval}` });
   let bars;
