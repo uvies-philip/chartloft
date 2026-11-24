@@ -43,6 +43,7 @@ const state = {
 let watchlist = store.get(K.wl, DEFAULT_WL.slice());
 let alerts = store.get(K.al, []);
 const lastKnown = new Map();
+const lastChange = new Map();
 const quotes = {}; // psym -> { price, changePct }
 
 /* ================================ instances =============================== */
@@ -254,7 +255,7 @@ function setChartScale() {
 }
 
 function syncScaleChips() {
-  const on = { log: state.log, pct: state.pct, vol: state.vol };
+  const on = { log: state.log, pct: state.pct, vol: state.vol && chartView?._hasVol !== false };
   $$('.tool-chip').forEach((b) => {
     const a = b.dataset.act;
     if (a in on) b.classList.toggle('on', !!on[a]);
@@ -338,9 +339,14 @@ async function selectSymbol(symStr, interval) {
 function applyBars(bars, sym) {
   state.bars = bars;
   state.digits = sym.digits;
-  lastKnown.set(sym.sym, bars[bars.length - 1].close);
+  const last = bars[bars.length - 1];
+  lastKnown.set(sym.sym, last.close);
+  const cutoff = last.time - 86400;
+  const ref = bars.find((b) => b.time >= cutoff) || bars[0];
+  if (ref && ref.close) lastChange.set(sym.sym, ((last.close - ref.close) / ref.close) * 100);
   hoveringBar = null;
   chartView.setData(bars, { digits: sym.digits, interval: state.interval, symbol: sym.sym });
+  syncScaleChips();
   drawLayer.series = chartView.series;
   drawLayer.resize();
   drawLayer.setDrawings(drawingsFor(sym.sym));
@@ -508,7 +514,7 @@ function renderWatchlist() {
     if (!sym) continue;
     const q = sym.provider === 'binance' ? quotes[sym.psym] : null;
     const price = q ? q.price : lastKnown.get(sym.sym);
-    const chg = q ? q.changePct : null;
+    const chg = q ? q.changePct : (lastChange.has(sym.sym) ? lastChange.get(sym.sym) : null);
     const row = el('div', { class: `wl-row ${state.symbol === sym.sym ? 'active' : ''}` });
     row.dataset.sym = sym.sym;
     row.append(el('div', { class: 'wl-id' },
