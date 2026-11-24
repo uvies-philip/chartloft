@@ -9,16 +9,16 @@ const LWC = () => window.LightweightCharts;
 
 export const THEMES = {
   dark: {
-    bg: '#0a0e13', panel: '#0f141b', text: '#c9d4e2', muted: '#7a8798',
-    grid: 'rgba(255,255,255,0.045)', border: '#1d2733', accent: '#4c8dff',
-    up: '#26a69a', down: '#ef5350', crosshair: 'rgba(180,200,225,0.45)',
-    volUp: 'rgba(38,166,154,0.42)', volDown: 'rgba(239,83,80,0.42)',
+    bg: '#0b1017', panel: '#0b1017', text: '#9fb0c6', muted: '#6c7d92',
+    grid: 'rgba(148,163,184,0.055)', border: 'rgba(148,163,184,0.13)', accent: '#5b8cff',
+    up: '#2ee6a8', down: '#ff5f7a', crosshair: 'rgba(159,176,198,0.34)',
+    volUp: 'rgba(46,230,168,0.28)', volDown: 'rgba(255,95,122,0.28)',
   },
   light: {
-    bg: '#ffffff', panel: '#f7f9fc', text: '#121a24', muted: '#6b7785',
-    grid: 'rgba(0,0,0,0.055)', border: '#e2e8f0', accent: '#2962ff',
-    up: '#089981', down: '#f23645', crosshair: 'rgba(60,80,110,0.45)',
-    volUp: 'rgba(8,153,129,0.35)', volDown: 'rgba(242,54,69,0.35)',
+    bg: '#ffffff', panel: '#ffffff', text: '#43536a', muted: '#71829a',
+    grid: 'rgba(15,30,50,0.055)', border: 'rgba(15,30,50,0.10)', accent: '#3b6fe8',
+    up: '#059f7a', down: '#e0384f', crosshair: 'rgba(60,80,110,0.40)',
+    volUp: 'rgba(5,159,122,0.26)', volDown: 'rgba(224,56,79,0.26)',
   },
 };
 
@@ -204,6 +204,12 @@ export class ChartView {
     this._priceSeries.setData(data);
     const hasVol = bars.some((b) => (b.volume || 0) > 0);
     this._hasVol = hasVol;
+    // Reserve the lower band for volume only when the instrument actually has any.
+    try {
+      this.chart.priceScale('right', 0).applyOptions({
+        scaleMargins: { top: 0.06, bottom: hasVol && this.showVolume ? 0.20 : 0.06 },
+      });
+    } catch {}
     if (this._volSeries) {
       this._volSeries.applyOptions({ visible: this.showVolume && hasVol });
       this._volSeries.setData(bars.map((b) => ({
@@ -273,13 +279,6 @@ export class ChartView {
       paneOf.set(inst.uid, paneIndex);
       paneIndex += 1;
     }
-    // stretch factors: keep price pane dominant
-    const totalPanes = this.chart.panes().length;
-    if (totalPanes > 1) {
-      const oscCount = totalPanes - 1;
-      this.chart.panes()[0].setStretchFactor(3);
-      for (let i = 1; i < totalPanes; i++) this.chart.panes()[i].setStretchFactor(1);
-    }
 
     for (const inst of this.indicators) {
       const def = INDICATOR_MAP[inst.id];
@@ -325,6 +324,13 @@ export class ChartView {
           inst._lastValues.push({ title: plot.title || def.name, value: last.value, color: plot.color === null ? inst.color : (plot.color || inst.color) });
         }
       });
+    }
+    // Stretch factors must be set after the panes hold their series, otherwise the
+    // chart re-balances and the price pane ends up too small.
+    const totalPanes = this.chart.panes().length;
+    if (totalPanes > 1) {
+      this.chart.panes()[0].setStretchFactor(4);
+      for (let i = 1; i < totalPanes; i++) this.chart.panes()[i].setStretchFactor(1);
     }
     this._indLen = this._visibleBars().length;
     this.onLegend();

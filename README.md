@@ -39,14 +39,23 @@ A free charting workstation that runs entirely in your browser. Candles, indicat
 
 ## Data sources
 
-| Market | Source | Cost |
+No API key. No account. Nothing to sign up for.
+
+| Market | Source | How |
 | --- | --- | --- |
-| Crypto | Binance public REST API | Free, no key, live |
-| Forex, gold, silver, indices, US stocks | [Twelve Data](https://twelvedata.com) | Free key: 800 requests a day, 8 per minute |
+| Crypto | Binance public REST | Direct from the browser, live |
+| Forex, gold, silver, indices, US stocks | Yahoo Finance | Read through the `r.jina.ai` text relay, which mirrors the missing CORS headers |
 
-Crypto works immediately. For everything else, create a free Twelve Data key, open Settings (gear icon) and paste it. The key is stored in your browser's localStorage and is never sent anywhere except to Twelve Data.
+Yahoo sends no CORS headers, so a browser cannot call it directly. `r.jina.ai` returns the same JSON as plain text with CORS enabled, and the app strips the text preamble before parsing. That is the whole trick, and it costs nothing.
 
-Because the free tier is rate limited, ChartDesk fetches history once per symbol and time frame and caches it. The active symbol refreshes about once a minute. Watchlist quotes for non-crypto symbols show the last price you loaded, which keeps you inside the daily quota.
+Two consequences, stated plainly:
+
+- The relay allows roughly 20 requests a minute per IP. The app spaces its calls out, caches every series for a few minutes and cools down for 45 seconds if it sees a 429.
+- Free feeds are delayed. Yahoo intraday data typically lags 1 to 15 minutes depending on the instrument. Do not use this for execution timing.
+
+If you want lower latency on FX you can add a free Twelve Data key in Settings and flip the live feed switch. It is entirely optional, and the app falls back to the free feed if the key route fails.
+
+Gold and silver come from COMEX front month futures (`GC=F`, `SI=F`) because Yahoo has no spot `XAUUSD` series. Prices track spot closely with a small basis, and the instrument panel labels the contract so you are never guessing.
 
 ## Keyboard shortcuts
 
@@ -92,7 +101,8 @@ js/app.js           state, data flow, panels, modals, shortcuts
 js/chartview.js     chart engine wrapper, panes, indicators, replay
 js/indicators.js    indicator maths, pure functions over bar arrays
 js/drawings.js      canvas drawing layer, hit testing, persistence
-js/providers.js     data adapters and rate limiting
+js/providers.js     data adapters (Binance, Yahoo via relay, optional Twelve Data)
+js/logos.js         currency flags, coin tiles, metal and index marks, sparklines
 js/ui.js            toasts, modals, menus
 vendor/             TradingView Lightweight Charts 5.3.0 (Apache 2.0)
 dev/selftest.js     smoke test, loaded only with ?selftest=1
@@ -105,10 +115,11 @@ Charts are rendered by [TradingView Lightweight Charts](https://github.com/tradi
 ## Honest limits
 
 - This is not TradingView. There is no social feed, no broker integration, no server side alerts, no second based intervals and no tick data.
+- Forex, metals and index history is delayed and rate limited by the free relay. Crypto is live.
 - Indicators are computed client side from OHLCV bars. They match the standard formulas, but they can differ slightly from another platform's output if that platform smooths or seeds differently.
-- Free data is delayed or rate limited depending on the provider. Do not use this to scalp.
 - Alerts only fire while the tab is open. Install the page as an app and keep it open if you rely on them.
-- Twelve Data's free tier may not include every index or exchange. If a symbol returns an error, the card on the chart tells you.
+- Gold and silver are COMEX futures proxies, not spot, so they sit a few dollars away from a broker's XAUUSD quote.
+- The relay is a third party. If it changes its terms the free feed breaks, which is why the Twelve Data switch exists as a fallback.
 
 ## Licence
 

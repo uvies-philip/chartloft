@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>ChartDesk · Free charting workstation</title>
-<meta name="description" content="A free, open charting workstation for crypto, forex, metals, indices and stocks. Indicators, drawing tools, bar replay and alerts. No account, no subscription." />
+<meta name="description" content="A free charting workstation for forex, gold, indices, crypto and stocks. 27 indicators, drawing tools, bar replay and alerts. No account, no API key, no subscription." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0e13'/%3E%3Cpath d='M7 23V9M13 23v-8M19 23V6M25 23v-6' stroke='%234c8dff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -28,7 +28,7 @@
     </a>
 
     <button class="sym-btn" id="symbolBtn" title="Change symbol (Ctrl+K)">
-      <span class="sym-avatar" id="symAvatar">₿</span>
+      <span class="sym-avatar" id="symAvatar"></span>
       <span class="sym-txt">
         <span class="sym-name" id="symName">BTCUSDT</span>
         <span class="sym-desc" id="symDesc">Bitcoin / TetherUS</span>
@@ -69,6 +69,7 @@
         <div class="legend" id="legend">
           <div class="legend-top">
             <div class="lg-sym">
+              <span class="lg-logo" id="lgLogo"></span>
               <span class="lg-title" id="lgSymbol">BTCUSDT</span>
               <span class="lg-badge" id="lgExch">BINANCE</span>
               <span class="lg-tf" id="lgTf">15m</span>

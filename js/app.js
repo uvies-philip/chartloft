@@ -3,10 +3,11 @@
 import { $, $$, el, uid, clamp, fmtPrice, fmtCompact, fmtPct, store, debounce, downloadCanvas, fmtClock, fmtDate, hexA, timeAgo } from './util.js';
 import { TIMEFRAMES, SYMBOLS, findSymbol, searchSymbols, CLASS_LABEL, tf } from './catalog.js';
 import { INDICATOR_DEFS, INDICATOR_MAP, defaultParams, OSC_COLORS, OVERLAY_COLORS } from './indicators.js';
-import { getBars, refreshTail, getCryptoQuotes, onStatus, setApiKey, getApiKey, tdUsage } from './providers.js';
+import { getBars, refreshTail, getCryptoQuotes, getSparkQuotes, getSparkCloses, onStatus, setApiKey, getApiKey, setUseLive, getUseLive } from './providers.js';
 import { ChartView } from './chartview.js';
 import { DrawingsLayer, TOOLS } from './drawings.js';
 import { icon } from './icons.js';
+import { symbolLogo, sparkline } from './logos.js';
 import { toast, openModal, closeTop, hasModal, openMenu, closeMenu, promptText, confirmDialog, iconify, field, numberInput, switchEl } from './ui.js';
 
 /* ================================ constants =============================== */
@@ -17,7 +18,7 @@ const K = {
   al: 'chartdesk.alerts.v1',
   lay: 'chartdesk.layouts.v1',
 };
-const DEFAULT_WL = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'EURUSD', 'XAUUSD', 'NAS100', 'SPX500', 'AAPL'];
+const DEFAULT_WL = ['EURUSD', 'GBPUSD', 'XAUUSD', 'USDJPY', 'NAS100', 'BTCUSDT', 'ETHUSDT', 'AAPL'];
 const DRAW_COLORS = ['#4c8dff', '#f5a623', '#26a69a', '#ef5350', '#e040fb', '#ffca28', '#29b6f6', '#b0bec5'];
 
 /* ================================== state ================================= */
@@ -44,7 +45,9 @@ let watchlist = store.get(K.wl, DEFAULT_WL.slice());
 let alerts = store.get(K.al, []);
 const lastKnown = new Map();
 const lastChange = new Map();
+const sparks = new Map(); // sym -> array of closes
 const quotes = {}; // psym -> { price, changePct }
+let lastDataAt = 0;
 
 /* ================================ instances =============================== */
 let chartView = null;
@@ -313,7 +316,8 @@ async function selectSymbol(symStr, interval) {
 
   $('#symName').textContent = sym.sym;
   $('#symDesc').textContent = sym.name;
-  $('#symAvatar').textContent = baseAsset(sym.sym).slice(0, 3);
+  $('#symAvatar').innerHTML = symbolLogo(sym.sym, sym.cls, 28);
+  $('#lgLogo').innerHTML = symbolLogo(sym.sym, sym.cls, 20);
   $('#lgSymbol').textContent = sym.sym;
   $('#lgExch').textContent = sym.exch;
   $('#lgTf').textContent = state.interval;
@@ -341,9 +345,11 @@ function applyBars(bars, sym) {
   state.digits = sym.digits;
   const last = bars[bars.length - 1];
   lastKnown.set(sym.sym, last.close);
-  const cutoff = last.time - 86400;
+  const cutoff = Math.floor(last.time / 86400) * 86400;
   const ref = bars.find((b) => b.time >= cutoff) || bars[0];
   if (ref && ref.close) lastChange.set(sym.sym, ((last.close - ref.close) / ref.close) * 100);
+  lastDataAt = Date.now();
+  sparks.set(sym.sym, bars.slice(-40).map((b) => b.close));
   hoveringBar = null;
   chartView.setData(bars, { digits: sym.digits, interval: state.interval, symbol: sym.sym });
   syncScaleChips();
@@ -356,7 +362,6 @@ function applyBars(bars, sym) {
   updateActiveWatchlist();
   renderWatchlist();
   updateCredits();
-  $('#spFootText').textContent = sym.provider === 'td' ? 'Twelve Data · free tier' : 'Binance public data';
 }
 
 function handleLoadError(e, sym) {
@@ -367,22 +372,34 @@ function handleLoadError(e, sym) {
   try { chartView.clearData(); } catch {}
   $('#lgOhlc').innerHTML = '';
   $('#lgInd').innerHTML = '';
-  if (code === 'NO_KEY' || code === 'BAD_KEY') {
+  if (code === 'RELAY_BUSY') {
     showState({
-      title: code === 'NO_KEY' ? `${sym.sym} needs a free data key` : `Twelve Data rejected the request for ${sym.sym}`,
-      body: code === 'NO_KEY'
-        ? 'Forex, metals, indices and stocks come from Twelve Data. A free key covers them with 800 requests a day and 8 per minute. Create one at twelvedata.com, paste it here, and it stays in this browser only.'
-        : 'Either the key is wrong, or your plan does not include this symbol. Free keys cover forex and US stocks; some indices and exchanges need a paid plan. Check the key in Settings, or try another symbol.',
-      actions: [{ text: 'Add free key', primary: true, onClick: openSettings }, { text: 'Switch to Bitcoin', onClick: () => selectSymbol('BTCUSDT') }],
+      title: 'Feed is busy',
+      body: 'The free relay that carries Yahoo data is rate limiting this IP. It clears by itself within a minute. Crypto pairs load straight from Binance and are never affected.',
+      actions: [
+        { text: 'Try again', primary: true, onClick: () => selectSymbol(state.symbol, state.interval) },
+        { text: 'Open Bitcoin', onClick: () => selectSymbol('BTCUSDT', state.interval) },
+      ],
     });
-  } else {
-    showState({
-      title: 'Could not load this market',
-      body: e.message || 'Unknown error.',
-      actions: [{ text: 'Retry', primary: true, onClick: () => selectSymbol(state.symbol, state.interval) }, { text: 'Settings', onClick: openSettings }],
-    });
-    toast(e.message || 'Load failed', 'error', 5000);
+    return;
   }
+  if (code === 'NO_SYMBOL') {
+    showState({
+      title: `${sym.sym} is not in the free feed`,
+      body: `Yahoo has no series for ${sym.y || sym.sym}. Try the ticker exactly as the exchange writes it, for example EURUSD or AAPL, or pick a symbol from the search list.`,
+      actions: [{ text: 'Search symbols', primary: true, onClick: openSymbolSearch }],
+    });
+    return;
+  }
+  showState({
+    title: 'Could not load this market',
+    body: e.message || 'Unknown error.',
+    actions: [
+      { text: 'Retry', primary: true, onClick: () => selectSymbol(state.symbol, state.interval) },
+      { text: 'Search symbols', onClick: openSymbolSearch },
+    ],
+  });
+  toast(e.message || 'Load failed', 'error', 5000);
 }
 
 function showState({ title, body, actions = [] }) {
@@ -440,17 +457,31 @@ function startPolling() {
 async function refreshWatchlist() {
   const syms = watchlist.map(findSymbol).filter(Boolean);
   const crypto = syms.filter((s) => s.provider === 'binance');
+  const rest = syms.filter((s) => s.provider !== 'binance');
+  const jobs = [];
   if (crypto.length) {
-    try {
-      const q = await getCryptoQuotes(crypto);
+    jobs.push(getCryptoQuotes(crypto).then((q) => {
       for (const [k, v] of Object.entries(q)) {
         quotes[k] = { price: v.price, changePct: v.changePct };
         const s = crypto.find((x) => x.psym === k);
         if (s) lastKnown.set(s.sym, v.price);
       }
-    } catch { /* ignore */ }
+    }).catch(() => {}));
   }
+  if (rest.length) {
+    jobs.push(getSparkQuotes(rest).then((q) => {
+      for (const s of rest) {
+        const hit = q[s.y];
+        if (!hit) continue;
+        lastKnown.set(s.sym, hit.price);
+        lastChange.set(s.sym, hit.changePct);
+        if (hit.spark && hit.spark.length > 2) sparks.set(s.sym, hit.spark);
+      }
+    }).catch(() => {}));
+  }
+  await Promise.all(jobs);
   renderWatchlist();
+  updateCredits();
 }
 
 /* ================================= legend ================================= */
@@ -517,6 +548,7 @@ function renderWatchlist() {
     const chg = q ? q.changePct : (lastChange.has(sym.sym) ? lastChange.get(sym.sym) : null);
     const row = el('div', { class: `wl-row ${state.symbol === sym.sym ? 'active' : ''}` });
     row.dataset.sym = sym.sym;
+    row.append(el('span', { class: 'wl-logo', html: symbolLogo(sym.sym, sym.cls, 24) }));
     row.append(el('div', { class: 'wl-id' },
       el('span', { class: 'wl-sym', text: sym.sym }),
       el('span', { class: 'wl-name', text: sym.name }),
@@ -539,10 +571,8 @@ function renderWatchlist() {
     row.addEventListener('click', () => selectSymbol(sym.sym, state.interval));
     host.append(row);
   }
-  const tdCount = watchlist.filter((s) => (findSymbol(s) || {}).provider === 'td').length;
-  $('#wlNote').textContent = tdCount
-    ? `${tdCount} symbol${tdCount > 1 ? 's' : ''} on Twelve Data show the last price you loaded. Crypto quotes refresh live.`
-    : 'Live quotes from Binance public data.';
+  const note = $('#wlNote');
+  if (note) note.textContent = 'Crypto is live from Binance. Forex, metals, indices and stocks come from the free Yahoo feed. No account, no key.';
 }
 
 function updateActiveWatchlist() {
@@ -665,9 +695,18 @@ function renderDetails() {
     ['24h high', fmtPrice(hi, state.digits)],
     ['24h low', fmtPrice(lo, state.digits)],
     ['Range shown', fmtPct(rangePct)],
-    ['Data source', sym.provider === 'td' ? 'Twelve Data' : 'Binance'],
+    ['Data feed', sym.provider === 'binance' ? 'Binance, live' : getUseLive() ? 'Twelve Data' : 'Yahoo, free feed'],
+    ...(sym.note ? [['Contract', sym.note]] : []),
   ];
-  host.innerHTML = `<div class="det-title">Instrument</div>` +
+  const spark = sparks.get(sym.sym);
+  const chgSign = (lastChange.get(sym.sym) || 0) >= 0;
+  host.innerHTML =
+    `<div class="det-head">
+       <span class="det-logo">${symbolLogo(sym.sym, sym.cls, 34)}</span>
+       <div class="det-id"><b>${sym.sym}</b><span>${sym.name}</span></div>
+     </div>` +
+    (spark && spark.length > 3 ? `<div class="det-spark">${sparkline(spark, { width: 280, height: 48, color: chgSign ? '#2ee6a8' : '#ff5f7a' })}</div>` : '') +
+    `<div class="det-title">Instrument</div>` +
     rows.map(([k, v]) => `<div class="det-row"><span>${k}</span><span>${v}</span></div>`).join('') +
     `<div class="det-title" style="margin-top:14px">Shortcuts</div>` +
     `<div class="det-row"><span>Search</span><span>Ctrl K</span></div>` +
@@ -804,7 +843,7 @@ function openSymbolSearch() {
         results.append(el('div', { class: 'sym-group', text: CLASS_LABEL[cls] || cls }));
       }
       const row = el('div', { class: `sym-item ${i === sel ? 'sel' : ''}` });
-      row.append(el('div', { class: 'av', text: baseAsset(s.sym).slice(0, 2) }));
+      row.append(el('div', { class: 'av', html: symbolLogo(s.sym, s.cls, 30) }));
       row.append(el('div', { class: 'meta' },
         el('span', { class: 'nm', text: s.sym }),
         el('span', { class: 'desc', text: s.name + (s.custom ? ' · added on the fly' : '') }),
@@ -1191,13 +1230,15 @@ function openSettings() {
   );
   themeSel.value = state.theme;
   const volSwitch = switchEl(state.vol);
-  const usage = tdUsage();
+  const liveSwitch = switchEl(getUseLive());
 
   const body = el('div', {},
     el('div', { class: 'det-title', text: 'Market data' }),
-    field('Twelve Data API key', keyInput, 'Free plan: 800 requests a day, 8 per minute. Covers forex, gold, silver, indices and US stocks. Stored in this browser only. Create one at twelvedata.com/register'),
-    el('div', { class: 'hint', style: { marginTop: '-4px', marginBottom: '14px' } },
-      `Used today: ${usage.used} of ${usage.cap}. Crypto data comes from Binance and needs no key.`),
+    el('div', { class: 'hint', style: { marginBottom: '12px' } },
+      'Crypto streams live from Binance. Forex, gold, indices and stocks load from a free Yahoo feed through a public text relay. Neither path needs an account or a key.'),
+    el('div', { class: 'row', style: { alignItems: 'center', marginBottom: '10px' } },
+      el('label', { text: 'Use Twelve Data for live forex data', style: { fontSize: '12px', color: 'var(--text-2)' } }), liveSwitch),
+    field('Optional Twelve Data key', keyInput, 'Only needed if you switch the option above on. Free tier: 800 requests a day. Stored in this browser only.'),
     el('div', { class: 'det-title', text: 'Appearance' }),
     field('Theme', themeSel),
     (() => {
@@ -1222,8 +1263,10 @@ function openSettings() {
   cancel.addEventListener('click', () => m.close());
   save.addEventListener('click', () => {
     const k = keyInput.value.trim();
-    const changed = k !== getApiKey();
+    const live = liveSwitch.isOn();
+    const changed = k !== getApiKey() || live !== getUseLive();
     setApiKey(k);
+    setUseLive(live);
     state.vol = volSwitch.isOn();
     chartView.setVolumeVisible(state.vol);
     if (themeSel.value !== state.theme) {
@@ -1233,7 +1276,7 @@ function openSettings() {
     }
     persist();
     m.close();
-    toast(k ? 'Key saved. Forex, gold and indices are unlocked.' : 'Key cleared', 'ok');
+    toast(live && k ? 'Live feed enabled through Twelve Data.' : 'Settings saved. Free feed in use.', 'ok');
     if (changed) selectSymbol(state.symbol, state.interval);
   });
 }
@@ -1323,10 +1366,14 @@ function persist() {
 }
 
 function updateCredits() {
-  const u = tdUsage();
-  const el2 = $('#creditInfo');
-  if (!el2) return;
-  el2.textContent = getApiKey() ? `Twelve Data ${u.used}/${u.cap} today` : 'Crypto: no key needed';
+  const node = $('#creditInfo');
+  if (!node) return;
+  const sym = findSymbol(state.symbol) || {};
+  const prov = sym.provider === 'binance' ? 'Binance' : getUseLive() ? 'Twelve Data' : 'Yahoo';
+  const age = lastDataAt ? timeAgo(lastDataAt) : 'loading';
+  node.textContent = `${prov} · ${age}`;
+  const foot = $('#spFootText');
+  if (foot) foot.textContent = sym.provider === 'binance' ? 'Live crypto · no key' : 'Free data · no key';
 }
 
 function startClock() {
