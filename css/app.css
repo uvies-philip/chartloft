@@ -237,6 +237,16 @@ kbd {
   background: var(--surface-3); color: var(--text-3); border: 1px solid var(--line);
 }
 .lg-tf { font-size: 11px; color: var(--text-3); font-weight: 500; }
+.lg-last {
+  font-family: var(--mono); font-size: 15px; font-weight: 600;
+  letter-spacing: -0.02em; color: var(--text);
+  padding: 2px 8px; border-radius: 6px;
+  background: var(--surface-3);
+  transition: color 0.12s, background 0.35s;
+  font-variant-numeric: tabular-nums;
+}
+.lg-last.up { color: var(--up); background: color-mix(in srgb, var(--up) 16%, transparent); }
+.lg-last.down { color: var(--down); background: color-mix(in srgb, var(--down) 16%, transparent); }
 .lg-ohlc {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
   font-family: var(--mono); font-size: 11px; letter-spacing: -0.01em; color: var(--text-3);
@@ -315,6 +325,18 @@ kbd {
 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--up); box-shadow: 0 0 8px color-mix(in srgb, var(--up) 70%, transparent); flex: none; }
 .dot.bad { background: var(--down); box-shadow: 0 0 8px color-mix(in srgb, var(--down) 70%, transparent); }
 .dot.busy { background: var(--warn); box-shadow: 0 0 8px color-mix(in srgb, var(--warn) 70%, transparent); }
+.live-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--up); padding: 2px 7px 2px 6px; border-radius: 5px;
+  background: color-mix(in srgb, var(--up) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--up) 28%, transparent);
+}
+.live-pill i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--up);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.82); } }
 
 /* ============================== SIDE PANEL ============================== */
 .sidepanel {

@@ -230,6 +230,39 @@ export class ChartView {
     this.onLegend();
   }
 
+  // Patch the forming bar from a single price tick. Keeps the view, the drawings
+  // and the panes untouched, which is what makes it feel live.
+  patchLastBar(price) {
+    if (!Number.isFinite(price)) return false;
+    const bars = this._visibleBars();
+    const b = bars[bars.length - 1];
+    if (!b || b.close === price) return false;
+    b.close = price;
+    b.high = Math.max(b.high, price);
+    b.low = Math.min(b.low, price);
+    if (this.chartType === 'line' || this.chartType === 'area') {
+      this._priceSeries.update({ time: b.time, value: price });
+    } else if (this.chartType === 'ha') {
+      this._applyData();
+    } else {
+      this._priceSeries.update({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
+    }
+    if (this._volSeries && this._hasVol) {
+      this._volSeries.update({ time: b.time, value: b.volume || 0, color: b.close >= b.open ? this.theme.volUp : this.theme.volDown });
+    }
+    this.onLegend();
+    return true;
+  }
+
+  // Replace the dataset after a periodic re-sync without snapping the viewport back.
+  refreshData(bars) {
+    const grew = !this.bars.length || bars.length !== this.bars.length || bars[bars.length - 1].time !== this.bars[this.bars.length - 1].time;
+    this.bars = bars;
+    this._applyData();
+    if (grew) this._buildIndicators();
+    this.onLegend();
+  }
+
   updateLastBar(bars) {
     this.bars = bars;
     if (this.replay.active) return;

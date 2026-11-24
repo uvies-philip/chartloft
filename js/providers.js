@@ -325,4 +325,70 @@ export async function getSparkCloses(sym, interval = '1h', limit = 40) {
   } catch { return null; }
 }
 
+/* ----------------------------- live crypto feed --------------------------- */
+// Binance trade stream. WebSockets are not subject to CORS, so this works in the
+// browser with no key. Falls back to the data-only host if the main one is blocked.
+const WS_HOSTS = ['wss://stream.binance.com:9443', 'wss://data-stream.binance.vision'];
+
+export function streamTrades(sym, onTick, onState = () => {}) {
+  if (!sym || sym.provider !== 'binance') return () => {};
+  let closed = false;
+  let ws = null;
+  let retry = 0;
+  let hostIdx = 0;
+  let timer = 0;
+  let stall = 0;
+
+  const schedule = () => {
+    if (closed) return;
+    clearTimeout(timer);
+    const wait = Math.min(15_000, 800 * 2 ** retry);
+    retry += 1;
+    timer = setTimeout(connect, wait);
+  };
+
+  const connect = () => {
+    if (closed) return;
+    onState('connecting');
+    try {
+      ws = new WebSocket(`${WS_HOSTS[hostIdx]}/ws/${sym.psym.toLowerCase()}@trade`);
+    } catch {
+      schedule();
+      return;
+    }
+    let beat = 0;
+    ws.onopen = () => {
+      retry = 0;
+      onState('live');
+      beat = setInterval(() => {
+        // If nothing arrives for 20s the socket is dead even though it looks open.
+        if (Date.now() - stall > 20_000) { try { ws.close(); } catch {} }
+      }, 10_000);
+    };
+    ws.onmessage = (ev) => {
+      stall = Date.now();
+      let m;
+      try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.p) onTick({ price: +m.p, time: Math.floor((m.T || Date.now()) / 1000) });
+    };
+    ws.onerror = () => {};
+    ws.onclose = () => {
+      clearInterval(beat);
+      onState('down');
+      if (!closed) {
+        hostIdx = (hostIdx + 1) % WS_HOSTS.length;
+        schedule();
+      }
+    };
+  };
+
+  stall = Date.now();
+  connect();
+  return () => {
+    closed = true;
+    clearTimeout(timer);
+    try { ws?.close(); } catch {}
+  };
+}
+
 export function clearCache() { memCache.clear(); }

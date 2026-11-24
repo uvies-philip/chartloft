@@ -3,7 +3,7 @@
 import { $, $$, el, uid, clamp, fmtPrice, fmtCompact, fmtPct, store, debounce, downloadCanvas, fmtClock, fmtDate, hexA, timeAgo } from './util.js';
 import { TIMEFRAMES, SYMBOLS, findSymbol, searchSymbols, CLASS_LABEL, tf } from './catalog.js';
 import { INDICATOR_DEFS, INDICATOR_MAP, defaultParams, OSC_COLORS, OVERLAY_COLORS } from './indicators.js';
-import { getBars, refreshTail, getCryptoQuotes, getSparkQuotes, getSparkCloses, onStatus, setApiKey, getApiKey, setUseLive, getUseLive } from './providers.js';
+import { getBars, refreshTail, getCryptoQuotes, getSparkQuotes, getSparkCloses, streamTrades, onStatus, setApiKey, getApiKey, setUseLive, getUseLive } from './providers.js';
 import { ChartView } from './chartview.js';
 import { DrawingsLayer, TOOLS } from './drawings.js';
 import { icon } from './icons.js';
@@ -48,6 +48,12 @@ const lastChange = new Map();
 const sparks = new Map(); // sym -> array of closes
 const quotes = {}; // psym -> { price, changePct }
 let lastDataAt = 0;
+let lastTickAt = 0;
+let liveStop = null;
+let lastLegendAt = 0;
+let lastDetailsAt = 0;
+let flashTimer = 0;
+let lastAlertAt = 0;
 
 /* ================================ instances =============================== */
 let chartView = null;
@@ -86,7 +92,12 @@ function boot() {
       hoveringBar = bar;
       renderLegend(bar);
     },
-    onLegend: () => renderLegend(hoveringBar),
+    onLegend: () => {
+      const now = Date.now();
+      if (now - lastLegendAt < 120) return;
+      lastLegendAt = now;
+      renderLegend(hoveringBar);
+    },
   });
 
   drawLayer = new DrawingsLayer({
@@ -324,6 +335,7 @@ async function selectSymbol(symStr, interval) {
   updateActiveWatchlist();
 
   if (state.replay.active) exitReplay();
+  stopLiveFeed();
   setLoading(true, `Loading ${sym.sym} · ${state.interval}`);
   hideState();
 
@@ -362,6 +374,57 @@ function applyBars(bars, sym) {
   updateActiveWatchlist();
   renderWatchlist();
   updateCredits();
+  startLiveFeed(sym);
+}
+
+/* ------------------------------- live feed -------------------------------- */
+function stopLiveFeed() {
+  if (liveStop) { try { liveStop(); } catch {} liveStop = null; }
+  livePill(false);
+}
+
+function startLiveFeed(sym) {
+  stopLiveFeed();
+  lastTickAt = Date.now();
+  if (!sym || sym.provider !== 'binance') return;
+  liveStop = streamTrades(sym, ({ price }) => {
+    if (state.replay.active || !state.bars.length) return;
+    const b = state.bars[state.bars.length - 1];
+    if (!b || !Number.isFinite(price)) return;
+    lastTickAt = Date.now();
+    const prev = b.close;
+    if (price === prev) return;
+    if (!chartView.patchLastBar(price)) return;
+    lastKnown.set(sym.sym, price);
+    lastDataAt = Date.now();
+    if (quotes[sym.psym]) quotes[sym.psym].price = price;
+    flashPrice(price, price > prev);
+    updateWatchPrice(sym.sym, price);
+    if (Date.now() - lastAlertAt > 1000) { lastAlertAt = Date.now(); checkAlerts(); }
+  }, (st) => livePill(st === 'live'));
+}
+
+function livePill(on) {
+  const node = $('#livePill');
+  if (node) node.hidden = !on;
+}
+
+function flashPrice(price, up) {
+  const node = $('#lgLast');
+  if (!node) return;
+  node.textContent = fmtPrice(price, state.digits);
+  node.classList.remove('up', 'down');
+  void node.offsetWidth;
+  node.classList.add(up ? 'up' : 'down');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => node.classList.remove('up', 'down'), 420);
+}
+
+function updateWatchPrice(symStr, price) {
+  const node = document.querySelector(`.wl-row[data-sym="${symStr}"] .wl-price`);
+  if (!node) return;
+  const digits = (findSymbol(symStr) || { digits: 2 }).digits;
+  node.textContent = fmtPrice(price, digits);
 }
 
 function handleLoadError(e, sym) {
@@ -425,33 +488,50 @@ function setLoading(on, text) {
 
 /* --------------------------------- polling -------------------------------- */
 function startPolling() {
+  // 20s: refresh watchlist quotes, then push one price patch into the active chart.
+  // A batched spark call covers every non-crypto symbol in a single relay request.
   setInterval(async () => {
     if (document.hidden) return;
-    if (!state.bars.length || state.replay.active) return;
-    try {
-      const sym = findSymbol(state.symbol);
-      const fresh = await refreshTail(sym, state.interval, state.bars);
-      if (fresh) {
-        if (fresh !== state.bars) {
-          // Twelve Data returns a brand new array on refresh.
-          state.bars = fresh;
-          chartView.setData(fresh, { digits: sym.digits, interval: state.interval, symbol: sym.sym });
-        } else {
-          chartView.updateLastBar(state.bars);
-        }
-        lastKnown.set(sym.sym, state.bars[state.bars.length - 1].close);
-        if (!hoveringBar) renderLegend();
-        checkAlerts();
-        renderWatchlist();
-      }
-    } catch { /* transient */ }
-  }, 6000);
-
-  setInterval(() => {
-    if (document.hidden) return;
-    refreshWatchlist();
+    await refreshWatchlist();
     checkAlerts();
-  }, 30000);
+    if (!state.bars.length || state.replay.active) return;
+    const sym = findSymbol(state.symbol);
+    if (!sym) return;
+    if (sym.provider !== 'binance') {
+      const price = lastKnown.get(sym.sym);
+      const bars = state.bars;
+      const prev = bars[bars.length - 1]?.close;
+      if (Number.isFinite(price) && chartView.patchLastBar(price)) {
+        lastDataAt = Date.now();
+        flashPrice(price, price >= (prev ?? price));
+      }
+    } else if (Date.now() - lastTickAt > 45_000) {
+      // The trade socket died or is blocked: fall back to REST so the chart still moves.
+      try {
+        const fresh = await refreshTail(sym, state.interval, state.bars);
+        if (fresh) {
+          chartView.updateLastBar(state.bars);
+          lastTickAt = Date.now();
+          lastDataAt = Date.now();
+          if (!hoveringBar) renderLegend();
+        }
+      } catch { /* transient */ }
+    }
+  }, 12_000);
+
+  // 90s: true OHLC re-sync for the active non-crypto chart, view preserved.
+  setInterval(async () => {
+    if (document.hidden || !state.bars.length || state.replay.active) return;
+    const sym = findSymbol(state.symbol);
+    if (!sym || sym.provider === 'binance') return;
+    try {
+      const fresh = await getBars(sym, state.interval, { force: true });
+      if (fresh && fresh !== state.bars) {
+        state.bars = fresh;
+        chartView.refreshData(fresh);
+      }
+    } catch { /* keep the patched bars */ }
+  }, 90_000);
 }
 
 async function refreshWatchlist() {
@@ -507,6 +587,8 @@ function renderLegend(barOverride) {
   const change = `<span class="${cls}"><b>${chg >= 0 ? '+' : ''}${fmtPrice(chg, digits)} (${fmtPct(pct)})</b></span>`;
   const vol = bar.volume ? `<span>Vol <b>${fmtCompact(bar.volume)}</b></span>` : '';
   $('#lgOhlc').innerHTML = parts + change + vol;
+  const lastNode = $('#lgLast');
+  if (lastNode) lastNode.textContent = fmtPrice(bar.close, digits);
 
   // indicator values
   const rows = [];
@@ -528,7 +610,8 @@ function renderLegend(barOverride) {
     rows.push(`<div class="lg-ind-row"><span class="lg-dot" style="background:var(--warn)"></span><span style="color:var(--warn)">REPLAY</span><span class="v">${d.replay.index + 1} / ${d.replay.total}</span></div>`);
   }
   $('#lgInd').innerHTML = rows.join('');
-  renderDetails();
+  const now = Date.now();
+  if (now - lastDetailsAt > 2000) { lastDetailsAt = now; renderDetails(); }
 }
 
 /* ================================ watchlist =============================== */
