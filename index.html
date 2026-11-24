@@ -36,23 +36,19 @@
       <span class="sym-caret" data-icon="chevronDown"></span>
     </button>
 
-    <div class="tf-group" id="tfGroup" role="tablist" aria-label="Timeframe"></div>
+    <button class="tf-btn" id="tfBtn" title="Timeframe">
+      <span id="tfLabel">15m</span>
+      <span class="caret" data-icon="chevronDown"></span>
+    </button>
 
     <div class="topbar-actions">
       <button class="tb-btn" data-act="charttype" title="Chart type" data-icon="candle"></button>
       <button class="tb-btn" data-act="indicators" title="Indicators (Ctrl+I)" data-icon="fx"></button>
-      <button class="tb-btn" data-act="compare" title="Compare symbol" data-icon="compare"></button>
       <button class="tb-btn" data-act="alert" title="Create alert (Alt+A)" data-icon="bell"></button>
       <button class="tb-btn" data-act="replay" title="Bar replay" data-icon="replay"></button>
       <span class="tb-sep"></span>
-      <button class="tb-btn" data-act="screenshot" title="Screenshot (Ctrl+Shift+S)" data-icon="camera"></button>
-      <button class="tb-btn" data-act="layouts" title="Saved layouts" data-icon="save"></button>
-      <button class="tb-btn panel-toggle" data-act="panel" title="Watchlist" data-icon="layout"></button>
-      <button class="tb-btn" data-act="theme" title="Light / dark (Ctrl+J)" data-icon="moon"></button>
-      <button class="tb-btn" data-act="settings" title="Settings" data-icon="gear"></button>
-      <button class="tb-btn search-btn" data-act="search" title="Search (Ctrl+K)">
-        <span data-icon="search"></span><kbd>Ctrl K</kbd>
-      </button>
+      <button class="tb-btn" data-act="search" title="Search (Ctrl+K)" data-icon="search"></button>
+      <button class="tb-btn" data-act="more" title="More" data-icon="dots"></button>
     </div>
   </header>
 
@@ -141,7 +137,6 @@
             <button class="icon-btn" id="wlRefresh" title="Refresh quotes" data-icon="refresh"></button>
           </div>
           <div class="wl-list" id="wlList"></div>
-          <div class="sp-note" id="wlNote"></div>
         </section>
 
         <section class="sp-pane" data-pane="objects">

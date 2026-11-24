@@ -23,6 +23,10 @@ const DRAW_COLORS = ['#4c8dff', '#f5a623', '#26a69a', '#ef5350', '#e040fb', '#ff
 
 /* ================================== state ================================= */
 const saved = store.get(K.state, {});
+// Bumped when the default layout changes, so an old saved layout with three
+// indicators and a volume pane does not reappear on a returning visit.
+const LAYOUT_V = 2;
+const keepLayout = saved.v === LAYOUT_V;
 const state = {
   symbol: 'BTCUSDT',
   interval: '15m',
@@ -30,12 +34,8 @@ const state = {
   theme: saved.theme || 'dark',
   log: false,
   pct: false,
-  vol: true,
-  indicators: Array.isArray(saved.indicators) ? saved.indicators : [
-    { uid: uid(), id: 'ema', params: { length: 21 }, visible: true, color: '#f5a623' },
-    { uid: uid(), id: 'ema', params: { length: 50 }, visible: true, color: '#4c8dff' },
-    { uid: uid(), id: 'rsi', params: { length: 14 }, visible: true, color: '#e040fb', pane: 1 },
-  ],
+  vol: keepLayout ? !!saved.vol : false,
+  indicators: keepLayout && Array.isArray(saved.indicators) ? saved.indicators : [],
   compare: [],
   bars: [],
   digits: 2,
@@ -141,20 +141,37 @@ function boot() {
 
 /* ================================= chrome ================================= */
 function buildTfBar() {
-  const host = $('#tfGroup');
-  host.innerHTML = '';
-  for (const t of TIMEFRAMES) {
-    const b = el('button', { class: `tf-btn ${t.id === state.interval ? 'active' : ''}`, text: t.label, title: t.id });
-    b.dataset.tf = t.id;
-    b.addEventListener('click', () => setInterval_(t.id));
-    host.append(b);
-  }
+  renderTimeframes();
+}
+
+function renderTimeframes() {
+  const label = $('#tfLabel');
+  if (label) label.textContent = tf(state.interval).label;
+}
+
+function tfMenu(anchor) {
+  openMenu(anchor, TIMEFRAMES.map((t) => ({
+    text: t.label,
+    active: t.id === state.interval,
+    onClick: () => setInterval_(t.id),
+  })));
+}
+
+function moreMenu(anchor) {
+  openMenu(anchor, [
+    { icon: 'compare', text: 'Compare symbol', onClick: () => openCompare() },
+    { icon: 'layers', text: 'Watchlist panel', onClick: () => $('#sidepanel').classList.toggle('open') },
+    { icon: 'camera', text: 'Save image', onClick: () => takeScreenshot() },
+    { icon: 'save', text: 'Saved layouts', onClick: () => layoutsMenu(anchor) },
+    { icon: state.theme === 'dark' ? 'sun' : 'moon', text: state.theme === 'dark' ? 'Light theme' : 'Dark theme', onClick: () => toggleTheme(null) },
+    { icon: 'gear', text: 'Settings', onClick: () => openSettings() },
+  ], { alignRight: true });
 }
 
 function setInterval_(id) {
   if (state.interval === id) return;
   state.interval = id;
-  $$('.tf-btn').forEach((b) => b.classList.toggle('active', b.dataset.tf === id));
+  renderTimeframes();
   selectSymbol(state.symbol, id);
 }
 
@@ -242,7 +259,7 @@ function buildTabs() {
 
 function bindTopbar() {
   $('#symbolBtn').addEventListener('click', openSymbolSearch);
-  $('#symAvatar');
+  $('#tfBtn').addEventListener('click', (e) => tfMenu(e.currentTarget));
   $$('.tb-btn[data-act]').forEach((b) => {
     b.addEventListener('click', () => topAction(b.dataset.act, b));
   });
@@ -288,6 +305,7 @@ function topAction(act, btn) {
   if (act === 'layouts') return layoutsMenu(btn);
   if (act === 'theme') return toggleTheme(btn);
   if (act === 'settings') return openSettings();
+  if (act === 'more') return moreMenu(btn);
   if (act === 'panel') return $('#sidepanel').classList.toggle('open');
 }
 
@@ -1549,6 +1567,7 @@ function showShortcuts() {
 /* ================================== misc ================================== */
 function persist() {
   store.set(K.state, {
+    v: 2,
     symbol: state.symbol, interval: state.interval, chartType: state.chartType,
     indicators: state.indicators, theme: state.theme, vol: state.vol,
     log: state.log, pct: state.pct,
