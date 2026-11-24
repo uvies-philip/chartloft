@@ -195,6 +195,19 @@ export class ChartView {
   _applyData() {
     const bars = this._visibleBars();
     if (!bars.length) return;
+    // The free FX feed returns single-price bars for quiet buckets, roughly nine
+    // percent of a 5m series. They draw as bare 1px sticks, so rebuild each one
+    // from the previous close and give it the smallest visible range.
+    const minMove = 1 / Math.pow(10, this.meta.digits || 2);
+    for (let i = 1; i < bars.length; i++) {
+      const b = bars[i];
+      if (b.high !== b.low) continue;
+      const pc = bars[i - 1].close;
+      b.open = pc;
+      b.high = Math.max(pc, b.close);
+      b.low = Math.min(pc, b.close);
+      if (b.high === b.low) { b.high = b.close + minMove; b.low = b.close - minMove; }
+    }
     const t = this.theme;
     let data;
     if (this.chartType === 'line' || this.chartType === 'area') {
