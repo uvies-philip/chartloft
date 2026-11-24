@@ -493,6 +493,7 @@ function startPolling() {
   setInterval(async () => {
     if (document.hidden) return;
     await refreshWatchlist();
+    lastDataAt = Date.now();
     checkAlerts();
     if (!state.bars.length || state.replay.active) return;
     const sym = findSymbol(state.symbol);
