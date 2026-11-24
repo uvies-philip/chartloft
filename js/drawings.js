@@ -291,6 +291,7 @@ export class DrawingsLayer {
   /* ------------------------------ interaction ----------------------------- */
   mousedown(e) {
     if (this.hidden || e.button !== 0) return;
+    if (!this.getBars().length) return;
     const r = this._rect();
     const x = e.clientX - r.left;
     const y = e.clientY - r.top;

@@ -355,6 +355,11 @@ function applyBars(bars, sym) {
 function handleLoadError(e, sym) {
   console.warn('load failed', e);
   const code = e.code || '';
+  // Never leave the previous instrument's candles under a new symbol's name.
+  state.bars = [];
+  try { chartView.clearData(); } catch {}
+  $('#lgOhlc').innerHTML = '';
+  $('#lgInd').innerHTML = '';
   if (code === 'NO_KEY' || code === 'BAD_KEY') {
     showState({
       title: code === 'NO_KEY' ? `${sym.sym} needs a free data key` : 'That API key was rejected',

@@ -210,6 +210,17 @@ export class ChartView {
     }
   }
 
+  clearData() {
+    this.bars = [];
+    try { this._priceSeries.setData([]); } catch {}
+    if (this._volSeries) { try { this._volSeries.setData([]); } catch {} }
+    for (const inst of this.indicators) {
+      for (const s of inst._series || []) { try { s.setData([]); } catch {} }
+      inst._lastValues = [];
+    }
+    this.onLegend();
+  }
+
   updateLastBar(bars) {
     this.bars = bars;
     if (this.replay.active) return;
