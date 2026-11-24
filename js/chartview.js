@@ -177,8 +177,11 @@ export class ChartView {
   resetView() {
     const bars = this._visibleBars();
     if (!bars.length) return;
-    const per = { '1m': 240, '5m': 220, '15m': 190, '30m': 180, '1h': 180, '4h': 150, '1d': 200, '1w': 160, '1M': 130 };
-    const n = Math.min(bars.length - 1, per[this.meta.interval] || 180);
+    // Aim for the 8px per bar TradingView uses, adapted to the panel width,
+    // otherwise the candles collapse into thin sticks on wide screens.
+    const w = (this.container && this.container.clientWidth) || 900;
+    const target = clamp(Math.round(w / 8), 60, 260);
+    const n = Math.min(bars.length - 1, target);
     try {
       this.chart.timeScale().setVisibleLogicalRange({ from: bars.length - n, to: bars.length + 2 });
     } catch { this.chart.timeScale().fitContent(); }
@@ -230,16 +233,50 @@ export class ChartView {
     this.onLegend();
   }
 
+  // Start the next candle locally. Free history feeds only add a bar when they
+  // get round to it, which is what made the last candle stretch instead of a new
+  // one opening on the bucket boundary.
+  appendBar(bar) {
+    if (!bar || !this.bars.length) return false;
+    const last = this.bars[this.bars.length - 1];
+    if (bar.time <= last.time) return false;
+    this.bars.push(bar);
+    try {
+      if (this.chartType === 'ha') this._applyData();
+      else if (this.chartType === 'line' || this.chartType === 'area') this._priceSeries.update({ time: bar.time, value: bar.close });
+      else this._priceSeries.update(bar);
+    } catch { /* the next full refresh will correct it */ }
+    if (this._volSeries && this._hasVol) {
+      try {
+        this._volSeries.update({ time: bar.time, value: bar.volume || 0, color: bar.close >= bar.open ? this.theme.volUp : this.theme.volDown });
+      } catch { /* ignore */ }
+    }
+    this._buildIndicators();
+    this.onLegend();
+    return true;
+  }
+
   // Patch the forming bar from a single price tick. Keeps the view, the drawings
   // and the panes untouched, which is what makes it feel live.
   patchLastBar(price) {
     if (!Number.isFinite(price)) return false;
     const bars = this._visibleBars();
-    const b = bars[bars.length - 1];
-    if (!b || b.close === price) return false;
+    const i = bars.length - 1;
+    const b = bars[i];
+    if (!b) return false;
+    // A bar that arrives with high === low is a single print from the feed and
+    // renders as a bare stick. Rebuild its body from the previous close.
+    const flat = b.high === b.low;
+    if (!flat && b.close === price) return false;
+    if (flat && bars[i - 1]) {
+      b.open = bars[i - 1].close;
+      b.high = Math.max(b.open, price);
+      b.low = Math.min(b.open, price);
+    } else {
+      b.high = Math.max(b.high, price);
+      b.low = Math.min(b.low, price);
+    }
     b.close = price;
-    b.high = Math.max(b.high, price);
-    b.low = Math.min(b.low, price);
     if (this.chartType === 'line' || this.chartType === 'area') {
       this._priceSeries.update({ time: b.time, value: price });
     } else if (this.chartType === 'ha') {

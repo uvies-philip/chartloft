@@ -401,6 +401,28 @@ function applyBars(bars, sym) {
   startLiveFeed(sym);
 }
 
+// Free feeds only publish a new candle when they get to it, so the app opens the
+// next one itself on the bucket boundary. Otherwise the last candle just keeps
+// stretching and the chart looks stuck.
+function rollBarIfNeeded(price) {
+  if (!state.bars.length || !Number.isFinite(price)) return false;
+  const secs = tf(state.interval).secs;
+  if (secs >= 86400) return false;
+  const last = state.bars[state.bars.length - 1];
+  const now = Math.floor(Date.now() / 1000);
+  if (now < last.time + secs) return false;
+  const bucket = Math.floor(now / secs) * secs;
+  const time = Math.max(last.time + secs, bucket);
+  return chartView.appendBar({
+    time,
+    open: last.close,
+    high: Math.max(last.close, price),
+    low: Math.min(last.close, price),
+    close: price,
+    volume: 0,
+  });
+}
+
 /* ------------------------------- live feed -------------------------------- */
 function stopLiveFeed() {
   if (liveStop) { try { liveStop(); } catch {} liveStop = null; }
@@ -417,6 +439,13 @@ function startLiveFeed(sym) {
     if (!b || !Number.isFinite(price)) return;
     lastTickAt = Date.now();
     const prev = b.close;
+    if (rollBarIfNeeded(price)) {
+      lastKnown.set(sym.sym, price);
+      lastDataAt = Date.now();
+      flashPrice(price, price > prev);
+      updateWatchPrice(sym.sym, price);
+      return;
+    }
     if (price === prev) return;
     if (!chartView.patchLastBar(price)) return;
     lastKnown.set(sym.sym, price);
@@ -527,10 +556,15 @@ function startPolling() {
       if (sym.psym) quotes[sym.psym] = { price: hit.price, changePct: hit.changePct };
       lastDataAt = Date.now();
       if (sym.provider !== 'binance') {
-        const prev = state.bars[state.bars.length - 1].close;
-        if (chartView.patchLastBar(hit.price)) {
-          flashPrice(hit.price, hit.price >= prev);
+        if (rollBarIfNeeded(hit.price)) {
+          flashPrice(hit.price, true);
           updateWatchPrice(sym.sym, hit.price);
+        } else {
+          const prev = state.bars[state.bars.length - 1].close;
+          if (chartView.patchLastBar(hit.price)) {
+            flashPrice(hit.price, hit.price >= prev);
+            updateWatchPrice(sym.sym, hit.price);
+          }
         }
       }
     }
@@ -564,8 +598,15 @@ function startPolling() {
     if (!sym || sym.provider === 'binance') return;
     try {
       const fresh = await getBars(sym, state.interval, { force: true });
-      if (fresh) {
-        state.bars = alignToTv(fresh, sym, tvPrices.get(sym.sym));
+      if (fresh && fresh.length) {
+        const aligned = alignToTv(fresh, sym, tvPrices.get(sym.sym));
+        const localLast = state.bars[state.bars.length - 1];
+        const feedLast = aligned[aligned.length - 1];
+        // Keep any candle we already opened ourselves if the feed is behind.
+        if (localLast && feedLast && localLast.time > feedLast.time) {
+          for (const b of state.bars) if (b.time > feedLast.time) aligned.push(b);
+        }
+        state.bars = aligned;
         chartView.refreshData(state.bars);
       }
     } catch { /* keep the patched bars */ }
