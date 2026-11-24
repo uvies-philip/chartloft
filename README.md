@@ -1,10 +1,10 @@
-# ChartDesk
+# ChartLoft
 
 A free charting workstation that runs entirely in your browser. Candles, indicators, drawing tools, bar replay and alerts for crypto, forex, metals, indices and US stocks. No account, no subscription, no server.
 
-**Live app:** https://uvies-philip.github.io/chartdesk/
+**Live app:** https://uvies-philip.github.io/chartloft/
 
-![ChartDesk](docs/screenshot.png)
+![ChartLoft](docs/screenshot.png)
 
 ## What it does
 
@@ -90,8 +90,8 @@ fails.
 No build step, no dependencies to install.
 
 ```bash
-git clone https://github.com/uvies-philip/chartdesk.git
-cd chartdesk
+git clone https://github.com/uvies-philip/chartloft.git
+cd chartloft
 python -m http.server 8123
 # open http://127.0.0.1:8123
 ```
@@ -103,8 +103,8 @@ ES modules need a real HTTP server, so opening `index.html` from the file system
 The app is static, so any static host works. For GitHub Pages:
 
 ```bash
-gh repo create chartdesk --public --source=. --push
-gh api -X POST repos/:owner/chartdesk/pages -f source[branch]=main -f source[path]=/
+gh repo create chartloft --public --source=. --push
+gh api -X POST repos/:owner/chartloft/pages -f source[branch]=main -f source[path]=/
 ```
 
 ## How it is built
@@ -123,9 +123,9 @@ vendor/             TradingView Lightweight Charts 5.3.0 (Apache 2.0)
 dev/selftest.js     smoke test, loaded only with ?selftest=1
 ```
 
-State lives in localStorage under `chartdesk.*`. There is no backend, so clearing site data removes your layouts and drawings.
+State lives in localStorage under the legacy `chartdesk.*` keys, kept from before the rename so existing layouts and drawings survive. There is no backend, so clearing site data removes your layouts and drawings.
 
-Charts are rendered by [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts), the open source library TradingView publishes under Apache 2.0. ChartDesk adds the indicator engine, drawing layer, panels, replay and data adapters on top.
+Charts are rendered by [TradingView Lightweight Charts](https://github.com/tradingview/lightweight-charts), the open source library TradingView publishes under Apache 2.0. ChartLoft adds the indicator engine, drawing layer, panels, replay and data adapters on top.
 
 ## Honest limits
 
@@ -138,4 +138,4 @@ Charts are rendered by [TradingView Lightweight Charts](https://github.com/tradi
 
 ## Licence
 
-MIT for ChartDesk. Lightweight Charts is Apache 2.0, copyright TradingView, Inc. See `LICENSE`.
+MIT for ChartLoft. Lightweight Charts is Apache 2.0, copyright TradingView, Inc. See `LICENSE`.

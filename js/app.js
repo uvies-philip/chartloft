@@ -1,4 +1,4 @@
-// ChartDesk application shell: state, data flow, panels, modals, shortcuts.
+// ChartLoft application shell: state, data flow, panels, modals, shortcuts.
 
 import { $, $$, el, uid, clamp, fmtPrice, fmtCompact, fmtPct, store, debounce, downloadCanvas, fmtClock, fmtDate, hexA, timeAgo } from './util.js';
 import { TIMEFRAMES, SYMBOLS, findSymbol, searchSymbols, CLASS_LABEL, tf, tvId } from './catalog.js';
@@ -11,6 +11,8 @@ import { symbolLogo, sparkline } from './logos.js';
 import { toast, openModal, closeTop, hasModal, openMenu, closeMenu, promptText, confirmDialog, iconify, field, numberInput, switchEl } from './ui.js';
 
 /* ================================ constants =============================== */
+// Storage keys keep the original chartdesk.* prefix on purpose: renaming them
+// would wipe saved layouts, drawings and alerts for anyone already using the app.
 const K = {
   state: 'chartdesk.state.v1',
   wl: 'chartdesk.watchlist.v1',
@@ -961,7 +963,7 @@ function checkAlerts() {
 function notify(text) {
   if (!('Notification' in window)) return;
   if (Notification.permission === 'granted') {
-    try { new Notification('ChartDesk alert', { body: text }); } catch {}
+    try { new Notification('ChartLoft alert', { body: text }); } catch {}
   }
 }
 
@@ -1466,7 +1468,7 @@ function openSettings() {
       (() => { const b = el('button', { class: 'btn ghost', text: 'Clear cached data' }); b.addEventListener('click', () => { localStorage.removeItem('chartdesk.tdday'); toast('Cache cleared', 'ok'); }); return b; })(),
       (() => { const b = el('button', { class: 'btn ghost', text: 'Export drawings' }); b.addEventListener('click', () => {
         const blob = new Blob([JSON.stringify(store.get(K.dw, {}), null, 2)], { type: 'application/json' });
-        const a = el('a', { href: URL.createObjectURL(blob), download: 'chartdesk-drawings.json' });
+        const a = el('a', { href: URL.createObjectURL(blob), download: 'chartloft-drawings.json' });
         document.body.append(a); a.click(); a.remove();
       }); return b; })(),
     ),
@@ -1510,9 +1512,9 @@ function takeScreenshot() {
     ctx.font = '600 12px Inter, system-ui, sans-serif';
     ctx.fillStyle = 'rgba(160,180,205,0.55)';
     ctx.textAlign = 'right';
-    ctx.fillText(`ChartDesk · ${state.symbol} · ${state.interval}`, out.width - 14, out.height - 12);
+    ctx.fillText(`ChartLoft · ${state.symbol} · ${state.interval}`, out.width - 14, out.height - 12);
     ctx.restore();
-    downloadCanvas(`chartdesk-${state.symbol}-${state.interval}.png`, out);
+    downloadCanvas(`chartloft-${state.symbol}-${state.interval}.png`, out);
     toast('Screenshot saved', 'ok', 2000);
   } catch (e) {
     toast('Screenshot failed: ' + e.message, 'error');
@@ -1617,7 +1619,7 @@ window.addEventListener('unhandledrejection', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
   boot();
   // expose a tiny console API for power users
-  window.ChartDesk = {
+  window.ChartLoft = {
     state,
     chartView: () => chartView,
     drawLayer: () => drawLayer,
@@ -1646,7 +1648,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (new URLSearchParams(location.search).has('selftest')) {
     const waitForBars = (n = 0) => {
       if (state.bars.length || n > 120) {
-        import('../dev/selftest.js').then((m) => m.run(window.ChartDesk)).catch((e) => logError('selftest: ' + e.message));
+        import('../dev/selftest.js').then((m) => m.run(window.ChartLoft)).catch((e) => logError('selftest: ' + e.message));
       } else setTimeout(() => waitForBars(n + 1), 100);
     };
     waitForBars();
